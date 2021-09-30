@@ -1,0 +1,119 @@
+% NO-NOGO odor discrimination Simulation
+close all;
+%% Parameters
+clc;  clear all;
+alpha =  .05; % learning rate
+beta =   10; % 1/Boltzmann temperature,0: random, large:rational
+Go_bias = .25;
+
+epsilon = 0.2;  % cost of Go, relative to drop of water reward
+gamma =  .1; % laser stim,
+epsilon_noise = 0.00; % noise in updating Q
+
+%rng('default');
+
+sigm = @(x) exp(x)./(1 + exp(x)); % sigmoid function
+dsigm = @(x) exp(x)./(1 + exp(x)).^2; % derivative of sigmoid
+
+Nmax = 0.8e3; % number of trials
+Nsessions = 1;
+Nmean = 10; % running mean for calculating %correct
+Policy='softmax';%'greedy';%'softmax'
+Trial_Type = {'GO';'GO-stim';'NOGO';'NOGO-stim'};
+Odor = [[1,0,0,0];...% GO NOGO GO-stim NOGO-stim
+        [0,1,0,0];...
+        [0,0,1,0];...
+        [0,0,0,1]];
+
+Correct = [ [1];...% correct action
+            [1];...
+            [0];...
+            [0]];
+Reward = [[1-epsilon,0];...% Go
+    [1-epsilon+gamma,0];...% GO-stim
+    [ -epsilon,0];...      % NOGO
+    [ -epsilon,0+gamma]];  % NOGO-stim
+
+Nodor = size(Odor,1);
+CPD = cumsum(1/Nodor.* ones(Nodor,1));
+maxRT = nan(Nodor,Nsessions);
+
+State = nan(Nmax,Nsessions); % Odor state
+Action = nan(Nmax,Nsessions); % 
+RT = nan(Nmax,Nsessions);
+
+figure('Position',[0 0 1000 800])
+for iii=1:Nsessions
+    % initialization
+    [~,~,O] = histcounts(rand(1,Nmax),CPD);  O = O +1; % Order identity in each trial
+    State(:,iii) = O;
+    switch Policy
+        
+        case 'softmax'
+            w_init = [.2.*ones(Nodor,1) , 0.*ones(Nodor,1)];%+ epsilon_noise .*randn(Nodor,2) ;
+            w_ = w_init;
+            w  = w_init;
+            Q = nan([size(w_),Nmax]);
+           
+    end
+    action = nan(1,Nmax);
+    % learning
+    for i=1:Nmax
+        %w_ = w_ + epsilon_noise .*randn(size(w_)); % introduce noise
+        switch Policy
+            
+            case 'softmax'
+                odor = Odor( O(i) , :);
+                x_go = odor*w_(:,1)  ; x_nogo = odor*w_(:,2);
+                prob_go = sigm((x_go - x_nogo + Go_bias).*beta); %
+                RT(i,iii) = 1./abs((x_go - x_nogo));
+                a = rand(1)< prob_go;
+                action(i) = a;
+                if a ==1; indx_a = 1; else ;indx_a = 2; end
+                if a
+                    sign_a = 1;  q = (x_go);  dq = dsigm(x_go);
+                else
+                    sign_a = -1; q = (x_nogo); dq = dsigm(x_nogo);
+                end
+                
+                r = Reward(O(i),indx_a) ;
+                
+                dw = alpha.*(r-q);
+                I = epsilon_noise .*(randn(size(w_)));% introduce noise
+                I(O(i),indx_a) = I(O(i),indx_a) + dw;
+                w = w_ + I;
+                Q(:,:,i) = w; %  Q value , Nodor x Naction x Ntrial
+                w_ = w;
+                
+        end
+    end
+    Action(:,iii) = action;
+    
+    % plotting
+    for j=1:Nodor
+        sh1(j) =subplot(Nodor,2,2*j-1);
+        clear indx correct_action correct
+        indx = (O==j);
+        correct_action = Correct(j);
+        correct = double(action(indx) == correct_action);
+        pcorrect = RunningMean_edge(correct,Nmean);
+        plot(pcorrect(:,1),'-'); drawnow; hold on
+        
+        title(Trial_Type{j});
+        ylim([-.1 1.1])
+        sh2(j) =subplot(Nodor,2,2*j);
+        semilogy(RT(indx,iii),'-'); hold on
+        % title(['mRT = ', num2str(nanmean(RT(indx,iii)),3)])
+        [~,maxRT(j,iii)] = max((RT(indx,iii)));
+    end
+    if iii==1
+        linkaxes(sh1);
+        linkaxes(sh2);
+        subplot(Nodor,2,1)
+        xlabel('Trial');ylabel('%Correct')
+        text((Nmax/Nodor/2),.3,{['\alpha = ', num2str(alpha)];['\beta = ', num2str(beta)];['Go bias = ', num2str(Go_bias)]},'Color','red','FontSize',15)
+        subplot(Nodor,2,2)
+        xlabel('Trial');ylabel('Response time')
+    end
+    
+end
