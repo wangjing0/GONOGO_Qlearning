@@ -1,10 +1,10 @@
 %% NO-NOGO odor discrimination Simulation
 close all;
-%% Parameters
+% Parameters
 clc;  clear all;
 alpha =  .1; % learning rate
 beta =   10; % 1/Boltzmann temperature,0: random, large:rational
-Go_bias = .0;
+go_bias = .1;
 
 epsilon = 0.2;  % cost of Go, relative to drop of water reward
 gamma =  .1; % laser stim,
@@ -16,7 +16,7 @@ sigm = @(x) exp(x)./(1 + exp(x)); % sigmoid function
 dsigm = @(x) exp(x)./(1 + exp(x)).^2; % derivative of sigmoid
 
 Nmax = 0.8e3; % number of trials
-Nsessions = 1;
+Nsessions = 10;
 Nmean = 10; % running mean for calculating %correct
 Policy='softmax';%'greedy';%'softmax'
 Trial_Type = {'GO';'GO-stim';'NOGO';'NOGO-stim'};
@@ -67,7 +67,7 @@ for iii=1:Nsessions
             case 'softmax'
                 odor = Odor( Od(i) , :);
                 x_go = odor*w_(:,1)  ; x_nogo = odor*w_(:,2);
-                prob_go = sigm((x_go - x_nogo + Go_bias).*beta); %
+                prob_go = sigm((x_go - x_nogo + go_bias).*beta); %
                 RT(i,iii) = 1./abs((x_go - x_nogo));
                 a = rand(1)< prob_go;
                 action(i) = a;
@@ -116,28 +116,41 @@ for iii=1:Nsessions
         linkaxes(sh2);
         subplot(Nodor,2,1)
         xlabel('Trial');ylabel('%Correct')
-        text((Nmax/Nodor/2),.3,{['\alpha = ', num2str(alpha)];['\beta = ', num2str(beta)];['Go bias = ', num2str(Go_bias)]},'Color','red','FontSize',15)
+        text((Nmax/Nodor/2),.3,{['\alpha = ', num2str(alpha)];['\beta = ', num2str(beta)];['Go bias = ', num2str(go_bias)]},'Color','red','FontSize',15)
         subplot(Nodor,2,2)
         xlabel('Trial');ylabel('Response time')
     end
 end
 %% GO-NOGO odor discrimination Behavioral fit to Model
 close all;clc;
-
 opts = optimset('display','iter', 'PlotFcns',{@optimplotx,...
-    @optimplotfval},'MaxFunEvals',1e4,'TolX',1e-5); % debugging version
-opts_ = optimset('display','off','MaxFunEvals',1e3,'TolX',1e-5); % simple version
+    @optimplotfval},'MaxFunEvals',1e4,'TolX',1e-6); % debugging version
+opts_ = optimset('display','off','MaxFunEvals',1e3,'TolX',1e-6); % simple version
 
-Nrepeats = 10; %number of fittings, initial the parameters at random start point
-para_truth = [alpha, beta];
-Para_opt = nan(length(para_truth),Nrepeats,Nsessions);
+Nrepeats = 1; %number of fittings, initial the parameters at random start point
+para_names = {'\alpha','\beta','go bias'};
+para_truth = [alpha, beta,go_bias];
+Nparas = length(para_truth);
+Para_opt = nan(Nparas,Nrepeats,Nsessions);
 
 for jjj=1:Nsessions
-    for iii=1:Nrepeats
-        Para_init= abs(para_truth.*(1 + .5*randn(size(para_truth))));
         state  = State(:,jjj);
         action = Action(:,jjj);
         reward = Reward(:,jjj);
+    for iii=1:Nrepeats
+        Para_init= abs(para_truth.*(1 + .5*randn(size(para_truth))));
         [Para_opt(:,iii,jjj),nll] = fminsearch(@(Para)GNG_loglikeli_action(Para,state,action,reward,Policy,QInit),Para_init,opts_);        
     end
 end
+%
+figure('Position',[0 500 700 200]);
+for ppp=1:Nparas
+subplot(1,Nparas,ppp); hold on
+bar(0,para_truth(ppp),'FaceColor','k','EdgeColor','none','FaceAlpha',.3 );
+para = reshape(squeeze(Para_opt(ppp,:,:)),[],1);
+plot(.1*randn(size(para)),para,'ko');
+errorbar(0,nanmean(para),nanstd(para),'ko','LineWidth',2,'MarkerFaceColor','k','CapSize',0)
+ylabel(para_names{ppp});
+xticks([ ])
+end
+legend({'Ground truth';'model fit';'mean+/-sd'})
