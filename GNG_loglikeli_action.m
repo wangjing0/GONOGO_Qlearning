@@ -2,6 +2,7 @@ function nLL = GNG_loglikeli_action(Para,state,action,reward, Policy,QInit)
 % negative loglikeli function of the GO-NOGO task.
 alpha = Para(1); % learning rate for chosen action
 beta = Para(2); % 1/temperature
+go_bias =  Para(3); % go bias
 
 exp_sum = @(x) sum(exp(x)); % sum of exp function
 
@@ -23,8 +24,8 @@ switch Policy
             end
             ind_state = state(t);
             ind_action = 2-action(t);
-           
-            LL(t) = beta.*Q(ind_state,ind_action,t) - log(exp_sum(beta.*Q(ind_state,:,t)));
+            qt = squeeze(Q(ind_state,:,t)) + [go_bias,0];
+            LL(t) = beta.*qt(ind_action) - log(exp_sum(beta.*qt));
             dr = reward(t) - Q(ind_state,ind_action,t);% RPE
             
             if t< Nmax
