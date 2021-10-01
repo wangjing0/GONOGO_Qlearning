@@ -1,10 +1,10 @@
-% NO-NOGO odor discrimination Simulation
+%% NO-NOGO odor discrimination Simulation
 close all;
 %% Parameters
 clc;  clear all;
-alpha =  .05; % learning rate
+alpha =  .1; % learning rate
 beta =   10; % 1/Boltzmann temperature,0: random, large:rational
-Go_bias = .25;
+Go_bias = .0;
 
 epsilon = 0.2;  % cost of Go, relative to drop of water reward
 gamma =  .1; % laser stim,
@@ -29,7 +29,7 @@ Correct = [ [1];...% correct action
             [1];...
             [0];...
             [0]];
-Reward = [[1-epsilon,0];...% Go
+Reward_ = [[1-epsilon,0];...% Go
     [1-epsilon+gamma,0];...% GO-stim
     [ -epsilon,0];...      % NOGO
     [ -epsilon,0+gamma]];  % NOGO-stim
@@ -40,30 +40,32 @@ maxRT = nan(Nodor,Nsessions);
 
 State = nan(Nmax,Nsessions); % Odor state
 Action = nan(Nmax,Nsessions); % 
+Reward = nan(Nmax,Nsessions); % recieved eward
 RT = nan(Nmax,Nsessions);
+
+QInit = [.2.*ones(Nodor,1) , 0.*ones(Nodor,1)];%+ epsilon_noise .*randn(Nodor,2) ;
 
 figure('Position',[0 0 1000 800])
 for iii=1:Nsessions
     % initialization
-    [~,~,O] = histcounts(rand(1,Nmax),CPD);  O = O +1; % Order identity in each trial
-    State(:,iii) = O;
-    switch Policy
-        
+    [~,~,Od] = histcounts(rand(1,Nmax),CPD); 
+    Od = Od +1; %Odor identity, random odor in each trial
+   
+    switch Policy        
         case 'softmax'
-            w_init = [.2.*ones(Nodor,1) , 0.*ones(Nodor,1)];%+ epsilon_noise .*randn(Nodor,2) ;
-            w_ = w_init;
-            w  = w_init;
+            w_ = QInit;
+            w  = QInit;
             Q = nan([size(w_),Nmax]);
            
     end
     action = nan(1,Nmax);
+    reward = nan(1,Nmax);
     % learning
     for i=1:Nmax
         %w_ = w_ + epsilon_noise .*randn(size(w_)); % introduce noise
-        switch Policy
-            
+        switch Policy            
             case 'softmax'
-                odor = Odor( O(i) , :);
+                odor = Odor( Od(i) , :);
                 x_go = odor*w_(:,1)  ; x_nogo = odor*w_(:,2);
                 prob_go = sigm((x_go - x_nogo + Go_bias).*beta); %
                 RT(i,iii) = 1./abs((x_go - x_nogo));
@@ -76,24 +78,27 @@ for iii=1:Nsessions
                     sign_a = -1; q = (x_nogo); dq = dsigm(x_nogo);
                 end
                 
-                r = Reward(O(i),indx_a) ;
+                r = Reward_(Od(i),indx_a) ;
+                reward(i) = r;
                 
                 dw = alpha.*(r-q);
                 I = epsilon_noise .*(randn(size(w_)));% introduce noise
-                I(O(i),indx_a) = I(O(i),indx_a) + dw;
+                I(Od(i),indx_a) = I(Od(i),indx_a) + dw;
                 w = w_ + I;
                 Q(:,:,i) = w; %  Q value , Nodor x Naction x Ntrial
                 w_ = w;
                 
         end
     end
-    Action(:,iii) = action;
+     State(:,iii) = Od;
+    Action(:,iii) = action;% 0: no go or 1:go
+    Reward(:,iii) = reward;
     
     % plotting
     for j=1:Nodor
         sh1(j) =subplot(Nodor,2,2*j-1);
         clear indx correct_action correct
-        indx = (O==j);
+        indx = (Od==j);
         correct_action = Correct(j);
         correct = double(action(indx) == correct_action);
         pcorrect = RunningMean_edge(correct,Nmean);
@@ -115,5 +120,24 @@ for iii=1:Nsessions
         subplot(Nodor,2,2)
         xlabel('Trial');ylabel('Response time')
     end
-    
+end
+%% GO-NOGO odor discrimination Behavioral fit to Model
+close all;clc;
+
+opts = optimset('display','iter', 'PlotFcns',{@optimplotx,...
+    @optimplotfval},'MaxFunEvals',1e4,'TolX',1e-5); % debugging version
+opts_ = optimset('display','off','MaxFunEvals',1e3,'TolX',1e-5); % simple version
+
+Nrepeats = 10; %number of fittings, initial the parameters at random start point
+para_truth = [alpha, beta];
+Para_opt = nan(length(para_truth),Nrepeats,Nsessions);
+
+for jjj=1:Nsessions
+    for iii=1:Nrepeats
+        Para_init= abs(para_truth.*(1 + .5*randn(size(para_truth))));
+        state  = State(:,jjj);
+        action = Action(:,jjj);
+        reward = Reward(:,jjj);
+        [Para_opt(:,iii,jjj),nll] = fminsearch(@(Para)GNG_loglikeli_action(Para,state,action,reward,Policy,QInit),Para_init,opts_);        
+    end
 end
