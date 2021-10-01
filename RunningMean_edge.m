@@ -1,5 +1,5 @@
 function [MTp]= RunningMean_edge(Tp,n)
-% running mean, average over n points, [mtp, std]
+%% running mean, average over n points, [mtp, std]
 if isrow(Tp)
     Tp=Tp';
 end
